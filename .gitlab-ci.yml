@@ -1,0 +1,111 @@
+# Define the stages of the pipeline
+stages:
+  - setup
+  - build
+  - test
+  - e2e
+  - scan
+  - deploy
+
+# Global variables for caching and dependencies
+variables:
+  NODE_ENV: 'development'
+  CACHE_DIR: 'node_modules'
+
+# Caching node_modules to improve performance
+cache:
+  paths:
+    - node_modules/
+
+# Setup stage to install dependencies and ensure environment is ready
+setup-job:
+  stage: setup
+  script:
+    - echo "Setting up environment..."
+    - npm install
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - node_modules/
+
+# Build stage to compile the application
+build-job:
+  stage: build
+  script:
+    - echo "Building the application..."
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - node_modules/
+
+# Test stage for unit tests
+test-job:
+  stage: test
+  script:
+    - echo "Running unit tests..."
+    - npm run test
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - node_modules/
+  artifacts:
+    reports:
+      junit: report.xml # Optional: Export test results for visualization
+
+# End-to-end test stage
+e2e-test-job:
+  stage: e2e
+  before_script:
+    - echo "Starting application in dev mode for e2e tests..."
+    - npm run start:dev &
+    - sleep 10 # Wait for the server to start
+  script:
+    - echo "Running e2e tests..."
+    - npm run test:e2e
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - node_modules/
+  artifacts:
+    reports:
+      junit: e2e-report.xml # Optional: Export e2e test results
+
+# Scan stage for security checks
+scan-job:
+  stage: scan
+  services:
+    - docker:dind
+  before_script:
+    - echo "Setting up for security scans..."
+    - docker info
+  script:
+    - echo "Scanning Docker image for vulnerabilities..."
+    - docker build -t your-app .
+    - trivy image your-app
+    - echo "Running static analysis with SonarQube..."
+    - sonar-scanner -Dsonar.projectKey=your-project -Dsonar.sources=./src -Dsonar.host.url=http://localhost:9000 -Dsonar.login=$SONAR_TOKEN
+    - echo "Checking for dependency vulnerabilities with Snyk..."
+    - snyk test
+    - echo "Performing security testing with OWASP ZAP..."
+    - zap-cli start
+    - zap-cli quick-scan http://localhost:3000
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - node_modules/
+  artifacts:
+    reports:
+      junit: security-report.xml # Optional: Export scan reports
+
+# Deploy stage (optional)
+deploy-job:
+  stage: deploy
+  script:
+    - echo "Deploying to environment..."
+    # Insert deployment commands (e.g., kubectl, helm, etc.)
+  only:
+    - master # Only deploy on master branch commits

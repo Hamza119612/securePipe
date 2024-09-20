@@ -1,0 +1,24 @@
+name: Check GitLab Pipeline Status
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  check-pipeline-status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check GitLab Pipeline Status
+        id: gitlab_pipeline
+        run: |
+          curl --header "PRIVATE-TOKEN: ${{ secrets.GITLAB_ACCESS_TOKEN }}" \
+            "https://gitlab.com/api/v4/projects/61872632/pipelines?ref=master" \
+            | jq '.[0]' > pipeline.json
+            
+      - name: Show GitLab Pipeline Status
+        run: |
+          STATUS=$(cat pipeline.json | jq -r '.status')
+          echo "The latest GitLab pipeline status is: $STATUS"
+        continue-on-error: true

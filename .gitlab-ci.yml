@@ -15,7 +15,6 @@ variables:
   NODE_ENV: 'development'
   CACHE_DIR: 'node_modules'
 
-# Caching node_modules to improve performance
 cache:
   paths:
     - node_modules/

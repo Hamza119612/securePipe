@@ -22,7 +22,7 @@ jobs:
           node-version: '16'
 
       - name: Install Dependencies
-        run: npm install
+        run: npm ci
 
       - name: Cache Node Modules
         uses: actions/cache@v2

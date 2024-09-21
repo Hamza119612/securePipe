@@ -1,23 +1,55 @@
-name: CI Pipeline
+name: Trigger and Monitor GitLab Pipeline
 
 on:
   push:
     branches:
-      - main
+      - laster
+  workflow_dispatch:
 
 jobs:
-  build:
+  # Step 1: Trigger the GitLab CI Pipeline
+  trigger-pipeline:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v2
-      - name: Set up Node.js
-        uses: actions/setup-node@v2
-        with:
-          node-version: '16'
-      - name: Install dependencies
-        run: npm install
-      - name: Build the app
-        run: npm run build
-      - name: Run tests
-        run: npm run test
+      - name: Trigger GitLab Pipeline
+        id: trigger_gitlab
+        env:
+          GITLAB_PROJECT_ID: 61872632
+          GITLAB_ACCESS_TOKEN: ${{ secrets.GITLAB_ACCESS_TOKEN }}
+        run: |
+          echo "Triggering GitLab Pipeline for project ID: $GITLAB_PROJECT_ID"
+          RESPONSE=$(curl --silent --request POST \
+            --form token=$GITLAB_ACCESS_TOKEN \
+            --form ref=master \
+            https://gitlab.com/api/v4/projects/$GITLAB_PROJECT_ID/trigger/pipeline)
+          echo "$RESPONSE" | jq '.'
+          PIPELINE_ID=$(echo "$RESPONSE" | jq '.id')
+          echo "Triggered Pipeline ID: $PIPELINE_ID"
+          echo "::set-output name=pipeline_id::$PIPELINE_ID"
+
+  # Step 2: Check the status of the triggered pipeline
+  check-pipeline-status:
+    needs: trigger-pipeline
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check GitLab Pipeline Status
+        env:
+          GITLAB_PROJECT_ID: YOUR_GITLAB_PROJECT_ID
+          GITLAB_ACCESS_TOKEN: ${{ secrets.GITLAB_ACCESS_TOKEN }}
+          PIPELINE_ID: ${{ steps.trigger_gitlab.outputs.pipeline_id }}
+        run: |
+          echo "Checking status of Pipeline ID: $PIPELINE_ID"
+          STATUS="running"
+          while [ "$STATUS" == "running" ] || [ "$STATUS" == "pending" ]
+          do
+            RESPONSE=$(curl --silent --header "PRIVATE-TOKEN: $GITLAB_ACCESS_TOKEN" \
+              "https://gitlab.com/api/v4/projects/$GITLAB_PROJECT_ID/pipelines/$PIPELINE_ID")
+            STATUS=$(echo "$RESPONSE" | jq -r '.status')
+            echo "Pipeline status: $STATUS"
+            sleep 10
+          done
+          if [ "$STATUS" != "success" ]; then
+            echo "Pipeline failed with status: $STATUS"
+            exit 1
+          fi
+          echo "Pipeline succeeded!"

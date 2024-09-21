@@ -1,55 +1,71 @@
-name: Trigger and Monitor GitLab Pipeline
+name: Check and Monitor GitLab Pipeline
 
 on:
+  workflow_dispatch:
   push:
     branches:
-      - laster
-  workflow_dispatch:
+      - main
 
 jobs:
-  # Step 1: Trigger the GitLab CI Pipeline
-  trigger-pipeline:
+  trigger-and-check-gitlab-pipeline:
     runs-on: ubuntu-latest
+
     steps:
+      # Step 1: Trigger GitLab Pipeline
       - name: Trigger GitLab Pipeline
-        id: trigger_gitlab
+        id: trigger_pipeline
         env:
-          GITLAB_PROJECT_ID: 61872632
+          GITLAB_PROJECT_ID: 61872632  # Replace with your GitLab project ID
           GITLAB_ACCESS_TOKEN: ${{ secrets.GITLAB_ACCESS_TOKEN }}
         run: |
-          echo "Triggering GitLab Pipeline for project ID: $GITLAB_PROJECT_ID"
-          RESPONSE=$(curl --silent --request POST \
-            --form token=$GITLAB_ACCESS_TOKEN \
-            --form ref=master \
-            https://gitlab.com/api/v4/projects/$GITLAB_PROJECT_ID/trigger/pipeline)
-          echo "$RESPONSE" | jq '.'
-          PIPELINE_ID=$(echo "$RESPONSE" | jq '.id')
-          echo "Triggered Pipeline ID: $PIPELINE_ID"
-          echo "::set-output name=pipeline_id::$PIPELINE_ID"
+          echo "Triggering GitLab Pipeline..."
+          PIPELINE_RESPONSE=$(curl --request POST \
+          --form token=$GITLAB_ACCESS_TOKEN \
+          --form ref=main \
+          https://gitlab.com/api/v4/projects/$GITLAB_PROJECT_ID/trigger/pipeline)
 
-  # Step 2: Check the status of the triggered pipeline
-  check-pipeline-status:
-    needs: trigger-pipeline
-    runs-on: ubuntu-latest
-    steps:
+          echo "Pipeline Response: $PIPELINE_RESPONSE"
+          # Extract pipeline ID using jq or grep
+          PIPELINE_ID=$(echo $PIPELINE_RESPONSE | jq -r '.id')
+          
+          if [ -z "$PIPELINE_ID" ] || [ "$PIPELINE_ID" == "null" ]; then
+            echo "Error: Unable to trigger the pipeline or retrieve the pipeline ID."
+            exit 1
+          fi
+
+          echo "Pipeline ID: $PIPELINE_ID"
+          echo "::set-output name=PIPELINE_ID::$PIPELINE_ID"
+
+      # Step 2: Monitor GitLab Pipeline Status
       - name: Check GitLab Pipeline Status
+        id: check_pipeline_status
         env:
           GITLAB_PROJECT_ID: YOUR_GITLAB_PROJECT_ID
           GITLAB_ACCESS_TOKEN: ${{ secrets.GITLAB_ACCESS_TOKEN }}
-          PIPELINE_ID: ${{ steps.trigger_gitlab.outputs.pipeline_id }}
         run: |
+          PIPELINE_ID=${{ steps.trigger_pipeline.outputs.PIPELINE_ID }}
           echo "Checking status of Pipeline ID: $PIPELINE_ID"
-          STATUS="running"
-          while [ "$STATUS" == "running" ] || [ "$STATUS" == "pending" ]
-          do
-            RESPONSE=$(curl --silent --header "PRIVATE-TOKEN: $GITLAB_ACCESS_TOKEN" \
-              "https://gitlab.com/api/v4/projects/$GITLAB_PROJECT_ID/pipelines/$PIPELINE_ID")
-            STATUS=$(echo "$RESPONSE" | jq -r '.status')
+
+          # Wait until the pipeline status is not "pending" or "running"
+          for i in {1..10}; do
+            STATUS=$(curl --header "PRIVATE-TOKEN: $GITLAB_ACCESS_TOKEN" \
+            "https://gitlab.com/api/v4/projects/$GITLAB_PROJECT_ID/pipelines/$PIPELINE_ID" | jq -r '.status')
+
             echo "Pipeline status: $STATUS"
+            if [[ "$STATUS" == "success" ]]; then
+              echo "Pipeline succeeded!"
+              exit 0
+            elif [[ "$STATUS" == "failed" ]]; then
+              echo "Pipeline failed!"
+              exit 1
+            elif [[ "$STATUS" == "canceled" ]]; then
+              echo "Pipeline was canceled!"
+              exit 1
+            fi
+
+            echo "Pipeline is still running or pending, checking again in 10 seconds..."
             sleep 10
           done
-          if [ "$STATUS" != "success" ]; then
-            echo "Pipeline failed with status: $STATUS"
-            exit 1
-          fi
-          echo "Pipeline succeeded!"
+
+          echo "Pipeline timed out."
+          exit 1

@@ -24,9 +24,27 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
+      - name: Cache Node Modules
+        uses: actions/cache@v2
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+      
       - name: Run Tests
         run: npm test
-
+      
+      - name: Generate Test Coverage
+        run: npm run test:coverage
+      
+      - name: Run ESLint
+        run: npm run lint
+      
+      - name: Snyk Security Scan
+        uses: snyk/actions/node@master
+        with:
+          args: --all-projects
+      
+      
       - name: Build Application
         run: npm run build
 
